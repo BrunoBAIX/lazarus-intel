@@ -5,29 +5,25 @@ on:
   push:
     branches: [ main, master ]
 
-concurrency:
-  group: build-mac
-  cancel-in-progress: true
-
 jobs:
   build-mac-intel:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - name: Checkout codice
         uses: actions/checkout@v4
 
-      - name: Installa Python 3.11 Universal2 (Intel + ARM)
-        run: |
-          curl -L -o python-installer.pkg https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
-          sudo installer -pkg python-installer.pkg -target /
+      - name: Configura Python 3.11 Intel (x86_64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
 
       - name: Estrai cartelle citta e mappe da assets.zip
         run: |
-          /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -c "
+          python -c "
           import zipfile, os
-          assert os.path.exists('assets.zip'), 'ERRORE: assets.zip non trovato!'
           with zipfile.ZipFile('assets.zip', 'r') as z:
               for member in z.infolist():
                   target = member.filename.replace('\\\\', '/')
@@ -39,19 +35,18 @@ jobs:
                           f.write(z.read(member))
           "
 
-      - name: Installa Pygame, Pillow e PyInstaller per Intel (x86_64)
+      - name: Installa Pygame, Pillow e PyInstaller
         run: |
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -m pip install --upgrade pip
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -m pip install --only-binary :all: pygame pillow pyinstaller
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary :all: pygame pillow pyinstaller
 
       - name: Converti icona.ico in icona.icns
         run: |
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -c "from PIL import Image; img = Image.open('icona.ico'); img.save('icona.icns')"
+          python -c "from PIL import Image; img = Image.open('icona.ico'); img.save('icona.icns')"
 
       - name: Compila Lazarus.app per Mac Intel (x86_64)
         run: |
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/pyinstaller \
-            --noconfirm --onedir --windowed --name "Lazarus" \
+          pyinstaller --noconfirm --onedir --windowed --name "Lazarus" \
             --target-arch x86_64 \
             --icon "icona.icns" \
             --add-data "menu_config.json:." \
