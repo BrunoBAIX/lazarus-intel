@@ -1,0 +1,74 @@
+name: Build Lazarus macOS Intel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+concurrency:
+  group: build-mac
+  cancel-in-progress: true
+
+jobs:
+  build-mac-intel:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Installa Python 3.11 Universal2 (Intel + ARM)
+        run: |
+          curl -L -o python-installer.pkg https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
+          sudo installer -pkg python-installer.pkg -target /
+
+      - name: Estrai cartelle citta e mappe da assets.zip
+        run: |
+          /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -c "
+          import zipfile, os
+          assert os.path.exists('assets.zip'), 'ERRORE: assets.zip non trovato!'
+          with zipfile.ZipFile('assets.zip', 'r') as z:
+              for member in z.infolist():
+                  target = member.filename.replace('\\\\', '/')
+                  if target.endswith('/'):
+                      os.makedirs(target, exist_ok=True)
+                  else:
+                      os.makedirs(os.path.dirname(target) or '.', exist_ok=True)
+                      with open(target, 'wb') as f:
+                          f.write(z.read(member))
+          "
+
+      - name: Installa Pygame, Pillow e PyInstaller per Intel (x86_64)
+        run: |
+          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -m pip install --upgrade pip
+          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -m pip install --only-binary :all: pygame pillow pyinstaller
+
+      - name: Converti icona.ico in icona.icns
+        run: |
+          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -c "from PIL import Image; img = Image.open('icona.ico'); img.save('icona.icns')"
+
+      - name: Compila Lazarus.app per Mac Intel (x86_64)
+        run: |
+          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/pyinstaller \
+            --noconfirm --onedir --windowed --name "Lazarus" \
+            --target-arch x86_64 \
+            --icon "icona.icns" \
+            --add-data "menu_config.json:." \
+            --add-data "descrizioni.json:." \
+            --add-data "sfondo.jpg:." \
+            --add-data "mappa.png:." \
+            --add-data "font_lazarus.ttf:." \
+            --add-data "musica.mp3:." \
+            --add-data "citta:citta" \
+            --add-data "mappe:mappe" \
+            main.py
+          mkdir -p dist/Lazarus.app/Contents/Resources/puntate
+          cd dist
+          zip -r -y Lazarus_macOS.zip Lazarus.app
+
+      - name: Carica eseguibile Mac Intel finito
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lazarus-macOS-Intel
+          path: dist/Lazarus_macOS.zip
