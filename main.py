@@ -61,20 +61,25 @@ def base_path():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def trova_video_dir(base):
-    """Cerca 'puntate' dentro base (_internal) oppure accanto all'eseguibile/app."""
-    interno = os.path.join(base, "puntate")
-    if os.path.isdir(interno):
-        return interno
+def _cartella_app_esterna(base):
+    """Restituisce la cartella che contiene Lazarus.app (su Mac) o l'exe (su Win)."""
     if getattr(sys, "frozen", False):
         eseguibile = os.path.dirname(os.path.abspath(sys.executable))
         if sys.platform == "darwin" and ".app/Contents/MacOS" in eseguibile.replace("\\", "/"):
-            esterno = os.path.abspath(os.path.join(eseguibile, "..", "..", "..", "puntate"))
-        else:
-            esterno = os.path.join(eseguibile, "puntate")
-        if os.path.isdir(esterno):
-            return esterno
-    return interno
+            return os.path.abspath(os.path.join(eseguibile, "..", "..", ".."))
+        return eseguibile
+    return base
+
+
+def trova_video_dir(base):
+    """Cerca 'puntate' accanto all'app/exe, oppure dentro base (_internal/Resources)."""
+    esterno = os.path.join(_cartella_app_esterna(base), "puntate")
+    if os.path.isdir(esterno) and os.listdir(esterno):
+        return esterno
+    interno = os.path.join(base, "puntate")
+    if os.path.isdir(interno) and os.listdir(interno):
+        return interno
+    return esterno
 
 
 BASE = base_path()
@@ -258,19 +263,23 @@ _VLC_CACHE = {"percorso": None, "cercato": False}
 
 
 def trova_vlc():
-    """Trova l'eseguibile di VLC, anche portatile accanto al menu."""
+    """Trova l'eseguibile di VLC, anche portatile accanto all'app."""
     if _VLC_CACHE["cercato"]:
         return _VLC_CACHE["percorso"]
 
     candidati = []
+    esterna = _cartella_app_esterna(BASE)
     if sys.platform == "darwin":
-        for sottocartella in ("", "vlc", "VLC"):
-            b = os.path.join(BASE, sottocartella) if sottocartella else BASE
-            candidati.append(os.path.join(b, "VLC.app", "Contents", "MacOS", "VLC"))
+        for radice in (esterna, BASE):
+            for sottocartella in ("", "vlc", "VLC"):
+                b = os.path.join(radice, sottocartella) if sottocartella else radice
+                candidati.append(os.path.join(b, "VLC.app", "Contents", "MacOS", "VLC"))
         candidati.append("/Applications/VLC.app/Contents/MacOS/VLC")
         candidati.append(os.path.expanduser("~/Applications/VLC.app/Contents/MacOS/VLC"))
-    for sottocartella in ("vlc", "VLC", "vlc-portable", "VLC-portable"):
-        candidati.append(os.path.join(BASE, sottocartella, "vlc.exe"))
+
+    for radice in (esterna, BASE):
+        for sottocartella in ("vlc", "VLC", "vlc-portable", "VLC-portable"):
+            candidati.append(os.path.join(radice, sottocartella, "vlc.exe"))
 
     for var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
         base = os.environ.get(var)
@@ -301,33 +310,32 @@ def trova_vlc():
         except Exception:
             pass
 
-    if trovato is None:
-        trovato = "vlc"
-
     _VLC_CACHE["percorso"] = trovato
     _VLC_CACHE["cercato"] = True
     return trovato
 
 
 def riproduci_attesa(percorso):
-    """Apre VLC a schermo intero sul video e aspetta.
-
-    Comando ridotto all'essenziale: niente opzioni di log, che su
-    alcuni sistemi fanno uscire VLC subito. Stampa nel terminale cosa
-    succede, cosi' un problema non resta in silenzio.
-    """
+    """Apre VLC a schermo intero; su Mac senza VLC usa QuickTime Player."""
     vlc = trova_vlc()
-    comando = [vlc, "--fullscreen", "--no-video-title-show",
-               "--play-and-exit", percorso]
+    if vlc:
+        comando = [vlc, "--fullscreen", "--no-video-title-show",
+                   "--play-and-exit", percorso]
+    elif sys.platform == "darwin":
+        comando = ["open", "-W", "-n", "-a", "QuickTime Player", percorso]
+    else:
+        comando = ["vlc", "--fullscreen", "--no-video-title-show",
+                   "--play-and-exit", percorso]
+
     try:
         processo = subprocess.Popen(comando)
     except Exception as e:
-        print("[vlc] non avviato:", e)
+        print("[player] non avviato:", e)
         return False
 
-    print("[vlc] avviato su", os.path.basename(percorso))
+    print("[player] avviato su", os.path.basename(percorso))
     codice = processo.wait()
-    print("[vlc] chiuso con codice", codice)
+    print("[player] chiuso con codice", codice)
     return True
 
 
